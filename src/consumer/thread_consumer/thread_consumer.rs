@@ -1,32 +1,46 @@
 use crate::consumer::Consumer;
 use crate::fs::backend::Backend;
-use std::{
-    sync::{Arc, Mutex},
-    thread,
-};
+use crossbeam_channel::{bounded, Receiver, Sender};
+use crossbeam_utils::thread;
+use std::{thread as std_thread, time};
 
-pub struct ThreadConsumer {}
+pub struct ThreadConsumer {
+    pub sender: Sender<String>,
+    pub receiver: Receiver<String>,
+}
 
 impl Consumer for ThreadConsumer {
     fn new() -> Self {
-        ThreadConsumer {}
+        let (sender, receiver) = bounded(3);
+        ThreadConsumer {
+            sender: sender,
+            receiver: receiver,
+        }
     }
 
-    fn start(backend: &impl Backend) {
-        backend.pull();
-        // let mut consumers = Vec::new();
+    fn consume(&mut self, backend: &(impl Backend + std::marker::Sync)) {
+        thread::scope(|s| {
+            // pass the channel sender to consume messages from broker
+            s.spawn(|_| {
+                backend.pull(&self.sender);
+            });
 
-        // let shared_backend = Arc::new(Mutex::new(backend));
-        // for _ in 0..3 {
-        //     let th_backend = shared_backend.clone();
-        //     let consumer = thread::spawn(move || {
-        //         // let shared = th_backend.lock().unwrap();
-        //         th_backend. .pull();
-        //     });
-        //     consumers.push(consumer);
-        // }
-        // for consumer in consumers {
-        //     consumer.join().expect("Consumer Crashed !!!");
-        // }
+            for i in 0..3 {
+                let th_receiver = self.receiver.clone();
+                s.spawn(move |_| loop {
+                    let message = th_receiver.recv().unwrap();
+                    if message.is_empty() {
+                        println!(
+                            "Thread {} - No Message Received. Sleeping for 3 seconds.",
+                            i
+                        );
+                        std_thread::sleep(time::Duration::from_secs(3));
+                    } else {
+                        println!("Thread {} - Message Received {}", i, message);
+                    }
+                });
+            }
+        })
+        .unwrap();
     }
 }

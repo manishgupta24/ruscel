@@ -3,6 +3,7 @@ use crate::fs::message::Message;
 use amiquip::{
     Channel, Connection, ConsumerMessage, ConsumerOptions, Exchange, Publish, QueueDeclareOptions,
 };
+use crossbeam_channel::Sender;
 
 // RabbitMQBackend
 // Implements the Backend trait to enable
@@ -12,6 +13,8 @@ pub struct RabbitMQBackend {
     pub channel: Channel,
     pub queue_name: &'static str,
 }
+
+unsafe impl Sync for RabbitMQBackend {}
 
 // Implementing Backend the trait functions for RabbitMQ Backend
 impl Backend for RabbitMQBackend {
@@ -45,7 +48,7 @@ impl Backend for RabbitMQBackend {
             .unwrap();
     }
 
-    fn pull(&self) {
+    fn pull(&self, sender: &Sender<String>) {
         let queue = self
             .channel
             .queue_declare(
@@ -58,15 +61,15 @@ impl Backend for RabbitMQBackend {
             .unwrap();
 
         let consumer = queue.consume(ConsumerOptions::default()).unwrap();
-        for (i, message) in consumer.receiver().iter().enumerate() {
+        for (_, message) in consumer.receiver().iter().enumerate() {
             match message {
                 ConsumerMessage::Delivery(delivery) => {
                     let body = String::from_utf8_lossy(&delivery.body);
-                    println!("({:>3}) Received [{}]", i, body);
+                    sender.send(body.to_owned().to_string()).unwrap();
                     consumer.ack(delivery).unwrap();
                 }
                 other => {
-                    println!("No More Messages. Sleeping for 3 seconds: {:?}", other);
+                    println!("Message Type not recognized: {:?}", other);
                     break;
                 }
             }
