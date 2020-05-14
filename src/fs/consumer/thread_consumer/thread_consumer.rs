@@ -1,5 +1,5 @@
-use crate::consumer::Consumer;
 use crate::fs::backend::Backend;
+use crate::fs::consumer::Consumer;
 use crossbeam_channel::{bounded, Receiver, Sender};
 use crossbeam_utils::thread;
 use std::{thread as std_thread, time};
@@ -7,14 +7,16 @@ use std::{thread as std_thread, time};
 pub struct ThreadConsumer {
     pub sender: Sender<String>,
     pub receiver: Receiver<String>,
+    pub worker_count: usize,
 }
 
 impl Consumer for ThreadConsumer {
-    fn new() -> Self {
-        let (sender, receiver) = bounded(3);
+    fn new(worker_count: usize) -> Self {
+        let (sender, receiver) = bounded(worker_count);
         ThreadConsumer {
             sender: sender,
             receiver: receiver,
+            worker_count: worker_count,
         }
     }
 
@@ -25,7 +27,7 @@ impl Consumer for ThreadConsumer {
                 backend.pull(&self.sender);
             });
 
-            for i in 0..3 {
+            for i in 0..self.worker_count {
                 let th_receiver = self.receiver.clone();
                 s.spawn(move |_| loop {
                     let message = th_receiver.recv().unwrap();

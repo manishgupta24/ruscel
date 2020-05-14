@@ -4,6 +4,7 @@ use amiquip::{
     Channel, Connection, ConsumerMessage, ConsumerOptions, Exchange, Publish, QueueDeclareOptions,
 };
 use crossbeam_channel::Sender;
+use log::{debug, info};
 
 // RabbitMQBackend
 // Implements the Backend trait to enable
@@ -20,8 +21,8 @@ unsafe impl Sync for RabbitMQBackend {}
 impl Backend for RabbitMQBackend {
     fn new(conn_string: &'static str, queue_name: &'static str) -> Self {
         let mut connection = Connection::insecure_open(conn_string).unwrap();
+        debug!("Connected to RabbitMQ Backend");
         let channel = connection.open_channel(None).unwrap();
-
         let _ = channel.queue_declare(
             queue_name,
             QueueDeclareOptions {
@@ -29,7 +30,7 @@ impl Backend for RabbitMQBackend {
                 ..QueueDeclareOptions::default()
             },
         );
-
+        debug!("Initialized Queue {}", queue_name);
         RabbitMQBackend {
             connection: connection,
             channel: channel,
@@ -38,11 +39,14 @@ impl Backend for RabbitMQBackend {
     }
 
     fn close(self) {
-        self.connection.close().unwrap()
+        debug!("Closing RabbitMQ Backend Connection");
+        self.connection.close().unwrap();
+        debug!("Closed RabbitMQ Backend Connection");
     }
 
     fn push(&self, message: Message) {
         let exchange = Exchange::direct(&self.channel);
+        info!("Sending Message {:?} To Queue {}", message, self.queue_name);
         exchange
             .publish(Publish::new(&message.to_bytes(), self.queue_name))
             .unwrap();
@@ -60,6 +64,7 @@ impl Backend for RabbitMQBackend {
             )
             .unwrap();
 
+        info!("Listening To Queue {}", self.queue_name);
         let consumer = queue.consume(ConsumerOptions::default()).unwrap();
         for (_, message) in consumer.receiver().iter().enumerate() {
             match message {
